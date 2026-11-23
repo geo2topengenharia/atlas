@@ -688,15 +688,46 @@ const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAI
 map.createPane('orthoOld').style.zIndex = 250; map.createPane('orthoNew').style.zIndex = 260;   // nova por cima
 // PMTiles: lê o cabeçalho do arquivo (limites e zooms) e só então desenha; erro vira aviso legível
 const PM_ERR = [];
+// camada PMTiles própria: aceita tiles de 256 ou 512 px e guarda os últimos tiles em memória
+// (voltar a uma área já vista não pede nada de novo ao servidor)
+const PM_MIME = { 2:'image/png', 3:'image/jpeg', 4:'image/webp', 5:'image/avif' }, PM_CACHE_MAX = 160;
+const AtlasPmLayer = L.GridLayer.extend({
+  initialize(p, opts){ this._p = p; this._zo = 0; this._mime = 'image/png'; this._cache = new Map(); L.GridLayer.prototype.initialize.call(this, opts); },
+  _blobUrl(z, x, y){
+    const k = z + '/' + x + '/' + y, c = this._cache;
+    if (c.has(k)){ const v = c.get(k); c.delete(k); c.set(k, v); return v; }
+    const v = this._p.getZxy(z, x, y).then(t => t && t.data && t.data.byteLength ? URL.createObjectURL(new Blob([t.data], { type:this._mime })) : null);
+    v.catch(() => c.delete(k));
+    c.set(k, v);
+    while (c.size > PM_CACHE_MAX){
+      const [k0, v0] = c.entries().next().value; c.delete(k0);
+      v0.then(u => { if (u) setTimeout(() => URL.revokeObjectURL(u), 10000); }, () => {});
+    }
+    return v;
+  },
+  createTile(coords, done){
+    const img = document.createElement('img'); img.alt = ''; img.setAttribute('role', 'presentation');
+    this._blobUrl(coords.z + this._zo, coords.x, coords.y).then(u => {
+      if (!u){ done(null, img); return; }
+      img.onload = () => done(null, img); img.onerror = () => done(new Error('tile inválido'), img); img.src = u;
+    }, e => done(e, img));
+    return img;
+  }
+});
 function mkPm(c, pane){
   if (!window.pmtiles){ PM_ERR.push('biblioteca PMTiles não carregou (sem internet?)'); return Object.assign(L.layerGroup(), { failed:true }); }
   const isDrive = c.pmtiles.startsWith('drive:');
   if (isDrive && !CONFIG.chaves.googleDrive){ PM_ERR.push(`${c.label}: falta a chave do Google (CONFIG.chaves.googleDrive)`); return Object.assign(L.layerGroup(), { failed:true }); }
   const p = new pmtiles.PMTiles(isDrive ? new DriveSource(c.pmtiles.slice(6)) : c.pmtiles);
-  const ly = pmtiles.leafletRasterLayer(p, { pane, maxZoom:CONFIG.maxZoom, maxNativeZoom:c.maxNativeZoom, minZoom:0, bounds:CONFIG.bounds, attribution:`Ortofoto © ${E.nome}` });
-  ly.ready = p.getHeader().then(hd => {
+  // só busca tiles com o mapa parado (sem pedidos durante arrasto/zoom) e com pouca margem fora da tela
+  const ly = new AtlasPmLayer(p, { pane, maxZoom:CONFIG.maxZoom, maxNativeZoom:c.maxNativeZoom, minZoom:0, bounds:CONFIG.bounds,
+    updateWhenIdle:true, updateWhenZooming:false, keepBuffer:1, attribution:`Ortofoto © ${E.nome}` });
+  ly.ready = Promise.all([p.getHeader(), p.getMetadata().catch(() => ({}))]).then(([hd, md]) => {
     const b = [[hd.minLat, hd.minLon], [hd.maxLat, hd.maxLon]];
-    ly.options.bounds = L.latLngBounds(b); ly.options.maxNativeZoom = hd.maxZoom; ly.options.minNativeZoom = hd.minZoom; c.maxNativeZoom = hd.maxZoom;
+    const ts = md && parseInt(md.tileSize || md.tile_size, 10) === 512 ? 512 : 256;   // tiles de 512 px = 4x menos pedidos
+    ly._zo = ts === 512 ? -1 : 0; ly._mime = PM_MIME[hd.tileType] || 'image/png';
+    ly.options.tileSize = ts; ly.options.bounds = L.latLngBounds(b);
+    ly.options.maxNativeZoom = hd.maxZoom - ly._zo; ly.options.minNativeZoom = hd.minZoom - ly._zo; c.maxNativeZoom = ly.options.maxNativeZoom;
     if (map.hasLayer(ly)) ly.redraw();
     return b;
   });
