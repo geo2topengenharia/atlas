@@ -1513,7 +1513,7 @@ addEventListener('keydown', e => {
   ed.querySelector('#edClose').onclick = closeEd;
   $('#editBtn').onclick = () => ed.hidden ? openEd() : closeEd();
   addEventListener('keydown', e => {
-    if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'e'){ e.preventDefault(); ed.hidden ? openEd() : closeEd(); }
+    if (e.ctrlKey && e.altKey && (e.code === 'KeyE' || e.key.toLowerCase() === 'e')){ e.preventDefault(); ed.hidden ? openEd() : closeEd(); }
     else if (e.key === 'Escape' && !ed.hidden && $('#nameDlg').hidden) closeEd();
   });
   // engrenagem: visível no modelo (sem configuração no link) e para quem já abriu o editor nesta aba
