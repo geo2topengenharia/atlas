@@ -871,12 +871,12 @@ const zoneOf = bb => { const [[s0,w0],[n0,e0]] = bb, b = CONFIG.toolBuffer; retu
 let zoneB = zoneOf(CONFIG.bounds);
 const inZone = ll => zoneB.contains(ll);
 const zoneRect = L.rectangle(zoneB, { color:'#ffffff', weight:1.6, opacity:.85, dashArray:'8 6', fill:false, interactive:false }).addTo(map);
-areaB = zoneB; refit();
-// sem limites definidos pelo link, a área passa a ser a extensão das ortofotos PMTiles (lida do arquivo)
+areaB = L.latLngBounds(CONFIG.bounds); refit();
+// com ortofoto PMTiles, o enquadramento é sempre a extensão da ortofoto (lida do arquivo); os limites do link só valem sem ortofoto
 Promise.allSettled([lyNew, lyOld].filter(l => l.ready && (l === lyNew ? HAS_NEW : HAS_OLD)).map(l => l.ready)).then(rs => {
-  const bs = rs.filter(r => r.status === 'fulfilled').map(r => r.value); if (!bs.length || CONFIG.boundsFixos) return;
+  const bs = rs.filter(r => r.status === 'fulfilled').map(r => r.value); if (!bs.length) return;
   const s = Math.min(...bs.map(b => b[0][0])), w = Math.min(...bs.map(b => b[0][1])), n = Math.max(...bs.map(b => b[1][0])), e = Math.max(...bs.map(b => b[1][1]));
-  CONFIG.bounds = [[s, w], [n, e]]; zoneB = zoneOf(CONFIG.bounds); zoneRect.setBounds(zoneB); areaB = zoneB; refit();
+  CONFIG.bounds = [[s, w], [n, e]]; zoneB = zoneOf(CONFIG.bounds); zoneRect.setBounds(zoneB); areaB = L.latLngBounds(CONFIG.bounds); refit();
 });
 if (PM_ERR.length) setTimeout(() => toast(PM_ERR.join(' · '), 9000), 600);
 const outOfZone = () => toast(`Fora da área de medição: máximo de ${CONFIG.toolBuffer} m além do limite das ortofotos.`);
@@ -1406,7 +1406,7 @@ addEventListener('keydown', e => {
       <div class="ed-row"><label>Código do trabalho<input data-f="projeto.codigo" maxlength="60" placeholder="26-045"></label><label>Texto ao lado de "Atlas"<input data-f="projeto.tipo" maxlength="60" placeholder="Entrega de ortofoto"></label></div>
     </fieldset>
     <fieldset><legend>Área do levantamento</legend>
-      <label>Limites (S, O, N, L) em graus decimais <small>— vazio = lidos da ortofoto PMTiles</small><input data-f="bounds" placeholder="-12.7854, -38.4760, -12.7304, -38.4499"></label>
+      <label>Limites (S, O, N, L) em graus decimais <small>— só valem sem ortofoto PMTiles (com ortofoto, o enquadramento é automático)</small><input data-f="bounds" placeholder="-12.7854, -38.4760, -12.7304, -38.4499"></label>
       <button class="btn" type="button" id="edView">Usar a vista atual do mapa</button>
     </fieldset>
     ${layerBlock('new', 'Ortofoto atual')}${layerBlock('old', 'Ortofoto anterior (comparação)')}
